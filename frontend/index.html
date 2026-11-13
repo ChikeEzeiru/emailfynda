@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Finder</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #000;
+    --bg-secondary: #111;
+    --bg-card: #0a0a0a;
+    --border: #222;
+    --border-hover: #333;
+    --text: #ededed;
+    --text-secondary: #888;
+    --text-tertiary: #555;
+    --accent: #fff;
+    --green: #0070f3;
+    --green-bg: rgba(0, 112, 243, 0.1);
+    --red: #e5484d;
+    --red-bg: rgba(229, 72, 77, 0.1);
+    --yellow: #f5a623;
+    --yellow-bg: rgba(245, 166, 35, 0.1);
+    --radius: 8px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+
+  header {
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+
+  header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+
+  .tab {
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .form-group { margin-bottom: 20px; }
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input[type="text"]::placeholder { color: var(--text-tertiary); }
+  input[type="text"]:focus { border-color: var(--border-hover); }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+  }
+
+  button.primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  button.primary:hover { opacity: 0.9; }
+  button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  button.secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  button.secondary:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+  }
+
+  .counter {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 24px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .results { margin-top: 32px; }
+
+  .result-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+    background: var(--bg-card);
+  }
+
+  .result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .result-header h3 { font-size: 15px; font-weight: 600; }
+
+  .domain-tag {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+
+  .email-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+
+  .email-row:last-child { border-bottom: none; }
+
+  .email-address {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+
+  .status-badge {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+
+  .status-valid { color: var(--green); background: var(--green-bg); }
+  .status-invalid { color: var(--red); background: var(--red-bg); }
+  .status-catch_all, .status-unknown, .status-no_mx {
+    color: var(--yellow);
+    background: var(--yellow-bg);
+  }
+
+  .no-domain-box {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-top: 16px;
+    background: var(--bg-card);
+  }
+
+  .no-domain-box p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+
+  .manual-domain-row { display: flex; gap: 8px; }
+  .manual-domain-row input { flex: 1; }
+
+  .history-entry {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .history-entry:hover { border-color: var(--border-hover); }
+
+  .history-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .history-name { font-size: 14px; font-weight: 500; }
+
+  .history-date {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .history-company { font-size: 13px; color: var(--text-secondary); }
+
+  .history-status { font-size: 12px; margin-top: 6px; }
+
+  .history-detail {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .history-entry.expanded .history-detail { display: block; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 0;
+    color: var(--text-tertiary);
+    font-size: 14px;
+  }
+
+  .history-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 16px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #333;
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-state {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-top: 16px;
+  }
+
+  .loading-state.active { display: flex; }
+
+  .error-msg {
+    font-size: 14px;
+    color: var(--red);
+    margin-top: 12px;
+    display: none;
+  }
+
+  .error-msg.active { display: block; }
+
+  .wake-notice {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 8px;
+    display: none;
+  }
+
+  .wake-notice.active { display: block; }
+
+  @media (max-width: 600px) {
+    .form-row { grid-template-columns: 1fr; }
+    .container { padding: 32px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Email Finder</h1>
+    <p>Find work emails for founders. Enter their name and company, and the tool will guess the domain, generate common email patterns, and verify them against the mail server.</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-view="search">Search</button>
+    <button class="tab" data-view="history">History</button>
+  </div>
+
+  <div id="search" class="view active">
+    <div class="counter" id="counter"></div>
+
+    <form id="searchForm">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="name" placeholder="Jane Doe" required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Company / Startup</label>
+          <input type="text" id="company" placeholder="Acme Inc" required>
+        </div>
+        <div class="form-group">
+          <label>X Username (optional)</label>
+          <input type="text" id="x_username" placeholder="@janedoe">
+        </div>
+      </div>
+
+      <button type="submit" class="primary" id="searchBtn">Find Email</button>
+    </form>
+
+    <div class="loading-state" id="loading">
+      <div class="spinner"></div>
+      <span>Looking up domain and verifying emails...</span>
+    </div>
+    <div class="wake-notice" id="wakeNotice">First request may take up to 30 seconds if the server is waking up.</div>
+
+    <div class="error-msg" id="error"></div>
+    <div class="results" id="results"></div>
+  </div>
+
+  <div id="history" class="view">
+    <div class="history-actions">
+      <button class="secondary" id="clearHistory">Clear All</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<script>
+  // REPLACE THIS with your Render backend URL
+  const API_URL = 'YOUR_RENDER_URL_HERE';
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.view).classList.add('active');
+      if (tab.dataset.view === 'history') loadHistory();
+    });
+  });
+
+  async function updateCounter() {
+    try {
+      const res = await fetch(`${API_URL}/api/history`);
+      const history = await res.json();
+      const today = new Date().toISOString().split('T')[0];
+      const todayCount = history.filter(h => h.date === today).length;
+      document.getElementById('counter').textContent = `${todayCount} / 10 lookups used today`;
+    } catch (e) {
+      document.getElementById('counter').textContent = '';
+    }
+  }
+  updateCounter();
+
+  document.getElementById('searchForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const btn = document.getElementById('searchBtn');
+    const loading = document.getElementById('loading');
+    const wakeNotice = document.getElementById('wakeNotice');
+    const error = document.getElementById('error');
+    const results = document.getElementById('results');
+
+    btn.disabled = true;
+    loading.classList.add('active');
+    wakeNotice.classList.add('active');
+    error.classList.remove('active');
+    results.innerHTML = '';
+
+    const payload = {
+      name: document.getElementById('name').value,
+      company: document.getElementById('company').value,
+      x_username: document.getElementById('x_username').value,
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/api/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        error.textContent = data.error;
+        error.classList.add('active');
+        return;
+      }
+
+      if (data.status === 'no_domain') {
+        results.innerHTML = renderNoDomain(data);
+      } else {
+        results.innerHTML = renderResults(data);
+      }
+
+      updateCounter();
+    } catch (err) {
+      error.textContent = 'Could not reach the server. It may be waking up. Try again in 30 seconds.';
+      error.classList.add('active');
+    } finally {
+      btn.disabled = false;
+      loading.classList.remove('active');
+      wakeNotice.classList.remove('active');
+    }
+  });
+
+  function renderNoDomain(data) {
+    return `
+      <div class="no-domain-box">
+        <p>Could not find a valid domain for "${data.company}". Enter the domain manually:</p>
+        <div class="manual-domain-row">
+          <input type="text" id="manualDomain" placeholder="company.com">
+          <button class="primary" onclick="searchManual()">Search</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function searchManual() {
+    const domain = document.getElementById('manualDomain').value.trim();
+    if (!domain) return;
+
+    const loading = document.getElementById('loading');
+    const results = document.getElementById('results');
+    loading.classList.add('active');
+
+    try {
+      const res = await fetch(`${API_URL}/api/search-manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('name').value,
+          company: document.getElementById('company').value,
+          domain: domain,
+          x_username: document.getElementById('x_username').value,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('error').textContent = data.error;
+        document.getElementById('error').classList.add('active');
+        return;
+      }
+
+      results.innerHTML = renderResults(data);
+      updateCounter();
+    } catch (err) {
+      document.getElementById('error').textContent = 'Could not reach the server.';
+      document.getElementById('error').classList.add('active');
+    } finally {
+      loading.classList.remove('active');
+    }
+  }
+
+  function statusLabel(status) {
+    const labels = {
+      valid: 'Likely Valid',
+      invalid: 'Invalid',
+      catch_all: 'Catch-All',
+      unknown: 'Unknown',
+      no_mx: 'No MX',
+    };
+    return labels[status] || status;
+  }
+
+  function renderResults(data) {
+    let html = `<div class="result-card">
+      <div class="result-header">
+        <h3>${data.name}</h3>
+        <span class="hint">${data.remaining_today} lookups left today</span>
+      </div>`;
+
+    for (const group of data.results) {
+      html += `<div style="margin-bottom: 12px;">
+        <span class="domain-tag">${group.domain}</span>
+      </div>`;
+
+      const order = { valid: 0, catch_all: 1, unknown: 2, no_mx: 3, invalid: 4 };
+      const sorted = [...group.emails].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
+
+      for (const email of sorted) {
+        html += `<div class="email-row">
+          <span class="email-address">${email.email}</span>
+          <span class="status-badge status-${email.status}">${statusLabel(email.status)}</span>
+        </div>`;
+      }
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  async function loadHistory() {
+    const list = document.getElementById('historyList');
+    try {
+      const res = await fetch(`${API_URL}/api/history`);
+      const history = await res.json();
+
+      if (history.length === 0) {
+        list.innerHTML = '<div class="empty-state">No lookups yet.</div>';
+        return;
+      }
+
+      const reversed = [...history].reverse();
+      list.innerHTML = reversed.map((entry) => {
+        const validCount = (entry.results || []).reduce((acc, g) =>
+          acc + g.emails.filter(e => e.status === 'valid').length, 0);
+        const catchAllCount = (entry.results || []).reduce((acc, g) =>
+          acc + g.emails.filter(e => e.status === 'catch_all').length, 0);
+
+        let statusText = '';
+        if (entry.status === 'no_domain') {
+          statusText = '<span class="status-badge status-invalid">No domain found</span>';
+        } else if (validCount > 0) {
+          statusText = `<span class="status-badge status-valid">${validCount} likely valid</span>`;
+        } else if (catchAllCount > 0) {
+          statusText = '<span class="status-badge status-catch_all">Catch-all server</span>';
+        } else {
+          statusText = '<span class="status-badge status-unknown">Unverified</span>';
+        }
+
+        let detailHtml = '';
+        if (entry.results && entry.results.length > 0) {
+          for (const group of entry.results) {
+            detailHtml += `<div style="margin-bottom: 8px;"><span class="domain-tag">${group.domain}</span></div>`;
+            for (const email of group.emails) {
+              detailHtml += `<div class="email-row">
+                <span class="email-address">${email.email}</span>
+                <span class="status-badge status-${email.status}">${statusLabel(email.status)}</span>
+              </div>`;
+            }
+          }
+        }
+
+        return `<div class="history-entry" onclick="this.classList.toggle('expanded')">
+          <div class="history-meta">
+            <span class="history-name">${entry.name}</span>
+            <span class="history-date">${entry.date}</span>
+          </div>
+          <div class="history-company">${entry.company}${entry.x_username ? ' · @' + entry.x_username.replace('@','') : ''}</div>
+          <div class="history-status">${statusText}</div>
+          <div class="history-detail">${detailHtml}</div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = '<div class="empty-state">Could not load history.</div>';
+    }
+  }
+
+  document.getElementById('clearHistory').addEventListener('click', async () => {
+    if (!confirm('Clear all history?')) return;
+    await fetch(`${API_URL}/api/history/clear`, { method: 'POST' });
+    loadHistory();
+  });
+</script>
+</body>
+</html>
