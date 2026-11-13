@@ -2,6 +2,14 @@
   base = "frontend"
   publish = "."
 
+# Proxy all /api/* calls to Render — same-origin from the browser's perspective,
+# so no CORS preflight is ever sent.
+[[redirects]]
+  from = "/api/*"
+  to = "https://emailfynda.onrender.com/api/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

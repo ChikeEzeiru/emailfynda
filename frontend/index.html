@@ -448,8 +448,8 @@
 </div>
 
 <script>
-  // REPLACE THIS with your Render backend URL
-  const API_URL = 'https://emailfynda.onrender.com';
+  // Empty string = relative URLs → Netlify proxies /api/* to Render (no CORS needed)
+  const API_URL = '';
 
   // Server status check
   async function checkServer() {
