@@ -84,6 +84,8 @@ def find_company_domain(company_name):
                 verified.append(domain)
             except Exception:
                 continue
+        if len(verified) >= 3:
+            break
 
     return verified
 
@@ -123,7 +125,7 @@ def verify_email_smtp(email, mx_host):
     Returns: 'valid', 'invalid', 'catch_all', or 'unknown'
     """
     try:
-        with smtplib.SMTP(timeout=10) as smtp:
+        with smtplib.SMTP(timeout=5) as smtp:
             smtp.connect(mx_host, 25)
             smtp.helo("verify.local")
             smtp.mail("test@verify.local")
