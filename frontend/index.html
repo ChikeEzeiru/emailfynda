@@ -532,10 +532,17 @@
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        error.textContent = `Server returned ${res.status} but no JSON. The request may have timed out on Render.`;
+        error.classList.add('active');
+        return;
+      }
 
       if (!res.ok) {
-        error.textContent = data.error;
+        error.textContent = data.error || `Server error: ${res.status}`;
         error.classList.add('active');
         return;
       }
@@ -548,7 +555,11 @@
 
       updateCounter();
     } catch (err) {
-      error.textContent = 'Could not reach the server. It may be waking up. Try again in 30 seconds.';
+      if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+        error.textContent = 'Network error: could not reach the server. It may be waking up, or CORS is blocking the request. Check the browser console for details.';
+      } else {
+        error.textContent = `Error: ${err.message}`;
+      }
       error.classList.add('active');
     } finally {
       btn.disabled = false;
@@ -599,7 +610,11 @@
       results.innerHTML = renderResults(data);
       updateCounter();
     } catch (err) {
-      document.getElementById('error').textContent = 'Could not reach the server.';
+      if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+        document.getElementById('error').textContent = 'Network error: could not reach the server.';
+      } else {
+        document.getElementById('error').textContent = `Error: ${err.message}`;
+      }
       document.getElementById('error').classList.add('active');
     } finally {
       loading.classList.remove('active');
