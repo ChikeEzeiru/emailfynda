@@ -9,7 +9,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Cover every route so flask-cors installs its OPTIONS preflight handler on all endpoints.
+# The r"/api/*" pattern was a broken regex (matches /api// not /api/search).
+CORS(app)
 
 
 @app.after_request
@@ -38,6 +40,11 @@ def save_history(history):
 def count_today(history):
     today = date.today().isoformat()
     return sum(1 for entry in history if entry.get("date") == today)
+
+
+_resolver = dns.resolver.Resolver()
+_resolver.timeout = 1.5    # seconds per individual query attempt
+_resolver.lifetime = 3.0   # total seconds before giving up on a name
 
 
 def find_company_domain(company_name):
@@ -84,11 +91,11 @@ def find_company_domain(company_name):
     verified = []
     for domain in candidates:
         try:
-            dns.resolver.resolve(domain, "MX")
+            _resolver.resolve(domain, "MX")
             verified.append(domain)
         except Exception:
             try:
-                dns.resolver.resolve(domain, "A")
+                _resolver.resolve(domain, "A")
                 verified.append(domain)
             except Exception:
                 continue
@@ -120,7 +127,7 @@ def generate_email_patterns(first_name, last_name, domain):
 def get_mx_host(domain):
     """Get the MX host for a domain."""
     try:
-        records = dns.resolver.resolve(domain, "MX")
+        records = _resolver.resolve(domain, "MX")
         mx = sorted(records, key=lambda r: r.preference)
         return str(mx[0].exchange).rstrip(".")
     except Exception:
