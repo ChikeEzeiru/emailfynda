@@ -212,7 +212,14 @@ def search():
     first_name = parts[0]
     last_name = parts[-1]
 
-    domains = find_company_domain(company)
+    # If the company input looks like a domain, use it directly after verifying MX.
+    _DOMAIN_RE = re.compile(r"^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$")
+    if _DOMAIN_RE.match(company):
+        verified = _check_domain(company)
+        domains = [verified] if verified else []
+    else:
+        domains = find_company_domain(company)
+
     if not domains:
         entry = {
             "date": date.today().isoformat(),
