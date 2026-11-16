@@ -1,6 +1,4 @@
 import dns.resolver
-import smtplib
-import socket
 import json
 import os
 import re
@@ -48,16 +46,12 @@ _resolver.lifetime = 3.0   # total seconds before giving up on a name
 
 
 def _check_domain(domain):
-    """Return domain if it has MX or A records, else None."""
+    """Return domain only if it has MX records (can actually receive email)."""
     try:
         _resolver.resolve(domain, "MX")
         return domain
     except Exception:
-        try:
-            _resolver.resolve(domain, "A")
-            return domain
-        except Exception:
-            return None
+        return None
 
 
 def find_company_domain(company_name):
@@ -134,63 +128,15 @@ def generate_email_patterns(first_name, last_name, domain):
     return patterns
 
 
-def get_mx_host(domain):
-    """Get the MX host for a domain."""
-    try:
-        records = _resolver.resolve(domain, "MX")
-        mx = sorted(records, key=lambda r: r.preference)
-        return str(mx[0].exchange).rstrip(".")
-    except Exception:
-        return None
-
-
-def verify_email_smtp(email, mx_host):
-    """
-    Verify an email via SMTP RCPT TO.
-    Returns: 'valid', 'invalid', 'catch_all', or 'unknown'
-    """
-    try:
-        with smtplib.SMTP(timeout=2) as smtp:
-            smtp.connect(mx_host, 25)
-            smtp.helo("verify.local")
-            smtp.mail("test@verify.local")
-            code, _ = smtp.rcpt(email)
-            fake_code, _ = smtp.rcpt(f"noreply-zzz9z@{email.split('@')[1]}")
-            smtp.quit()
-
-            if code == 250 and fake_code == 250:
-                return "catch_all"
-            elif code == 250:
-                return "valid"
-            else:
-                return "invalid"
-    except smtplib.SMTPServerDisconnected:
-        return "unknown"
-    except smtplib.SMTPConnectError:
-        return "unknown"
-    except socket.timeout:
-        return "unknown"
-    except Exception:
-        return "unknown"
-
 
 def verify_emails(patterns, domain):
-    """Verify all email patterns in parallel against the domain's MX server."""
-    mx_host = get_mx_host(domain)
-
-    if not mx_host:
-        return [{"email": p, "status": "no_mx"} for p in patterns]
-
-    results = {}
-    with ThreadPoolExecutor(max_workers=len(patterns)) as executor:
-        future_to_email = {
-            executor.submit(verify_email_smtp, p, mx_host): p for p in patterns
-        }
-        for future in as_completed(future_to_email):
-            email = future_to_email[future]
-            results[email] = future.result()
-
-    return [{"email": p, "status": results.get(p, "unknown")} for p in patterns]
+    """
+    Return patterns with their verification status.
+    SMTP verification via port 25 is blocked on most cloud hosts (including
+    Render's free tier), so we skip it and mark all patterns as 'unverified'.
+    The domain is MX-confirmed, so the patterns are valid formats to try.
+    """
+    return [{"email": p, "status": "unverified"} for p in patterns]
 
 
 def _verify_domain(domain, first_name, last_name):

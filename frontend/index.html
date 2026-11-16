@@ -267,7 +267,7 @@
 
   .status-valid { color: var(--green); background: var(--green-bg); }
   .status-invalid { color: var(--red); background: var(--red-bg); }
-  .status-catch_all, .status-unknown, .status-no_mx {
+  .status-catch_all, .status-unknown, .status-no_mx, .status-unverified {
     color: var(--yellow);
     background: var(--yellow-bg);
   }
@@ -628,6 +628,7 @@
       catch_all: 'Catch-All',
       unknown: 'Unknown',
       no_mx: 'No MX',
+      unverified: 'Try This',
     };
     return labels[status] || status;
   }
