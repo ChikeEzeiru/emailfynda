@@ -1,0 +1,26 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Oracle Cloud via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/emailfynda
+            git pull origin main
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt --quiet
+            sudo systemctl restart emailfynda
+            echo "Deploy complete"
