@@ -148,7 +148,7 @@ def _verify_domain_smtp(domain, emails):
         return {e: "unknown" for e in emails}
 
     try:
-        with smtplib.SMTP(timeout=10) as smtp:
+        with smtplib.SMTP(timeout=5) as smtp:
             smtp.connect(mx_host, 25)
             smtp.ehlo("emailfynda.com")
             smtp.mail("verify@emailfynda.com")
