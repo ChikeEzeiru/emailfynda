@@ -491,16 +491,25 @@
     });
   });
 
-  async function updateCounter() {
-    try {
-      const res = await fetch(`${API_URL}/api/history`);
-      const history = await res.json();
-      const today = new Date().toISOString().split('T')[0];
-      const todayCount = history.filter(h => h.date === today).length;
-      document.getElementById('counter').textContent = `${todayCount} / 10 lookups used today`;
-    } catch (e) {
-      document.getElementById('counter').textContent = '';
-    }
+  function getLocalCount() {
+    const today = new Date().toISOString().split('T')[0];
+    const stored = JSON.parse(localStorage.getItem('ef_counts') || '{}');
+    return stored[today] || 0;
+  }
+
+  function incrementLocalCount() {
+    const today = new Date().toISOString().split('T')[0];
+    const stored = JSON.parse(localStorage.getItem('ef_counts') || '{}');
+    stored[today] = (stored[today] || 0) + 1;
+    // Keep only the last 7 days to avoid unbounded growth
+    const keys = Object.keys(stored).sort();
+    if (keys.length > 7) delete stored[keys[0]];
+    localStorage.setItem('ef_counts', JSON.stringify(stored));
+  }
+
+  function updateCounter() {
+    const count = getLocalCount();
+    document.getElementById('counter').textContent = `${count} / 10 lookups used today`;
   }
   updateCounter();
 
@@ -553,6 +562,7 @@
         results.innerHTML = renderResults(data);
       }
 
+      incrementLocalCount();
       updateCounter();
     } catch (err) {
       if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
@@ -608,6 +618,7 @@
       }
 
       results.innerHTML = renderResults(data);
+      incrementLocalCount();
       updateCounter();
     } catch (err) {
       if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
