@@ -4,13 +4,13 @@ import socket
 import json
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-# Cover every route so flask-cors installs its OPTIONS preflight handler on all endpoints.
-# The r"/api/*" pattern was a broken regex (matches /api// not /api/search).
 CORS(app)
 
 
@@ -47,8 +47,21 @@ _resolver.timeout = 1.5    # seconds per individual query attempt
 _resolver.lifetime = 3.0   # total seconds before giving up on a name
 
 
+def _check_domain(domain):
+    """Return domain if it has MX or A records, else None."""
+    try:
+        _resolver.resolve(domain, "MX")
+        return domain
+    except Exception:
+        try:
+            _resolver.resolve(domain, "A")
+            return domain
+        except Exception:
+            return None
+
+
 def find_company_domain(company_name):
-    """Try to find company domain by searching common patterns."""
+    """Try to find company domain by searching common patterns in parallel."""
     clean = re.sub(r"[^a-zA-Z0-9 ]", "", company_name).strip().lower()
     words = clean.split()
 
@@ -86,23 +99,20 @@ def find_company_domain(company_name):
         for tld in tlds:
             candidates.add(f"{initials}{tld}")
 
-    candidates = list(candidates)
-
+    # Check all candidates in parallel; collect the first 3 that resolve.
     verified = []
-    for domain in candidates:
-        try:
-            _resolver.resolve(domain, "MX")
-            verified.append(domain)
-        except Exception:
-            try:
-                _resolver.resolve(domain, "A")
-                verified.append(domain)
-            except Exception:
-                continue
-        if len(verified) >= 3:
-            break
+    lock = threading.Lock()
 
-    return verified
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {executor.submit(_check_domain, d): d for d in candidates}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                with lock:
+                    if len(verified) < 3:
+                        verified.append(result)
+
+    return verified[:3]
 
 
 def generate_email_patterns(first_name, last_name, domain):
@@ -140,12 +150,12 @@ def verify_email_smtp(email, mx_host):
     Returns: 'valid', 'invalid', 'catch_all', or 'unknown'
     """
     try:
-        with smtplib.SMTP(timeout=5) as smtp:
+        with smtplib.SMTP(timeout=2) as smtp:
             smtp.connect(mx_host, 25)
             smtp.helo("verify.local")
             smtp.mail("test@verify.local")
             code, _ = smtp.rcpt(email)
-            fake_code, _ = smtp.rcpt(f"definitely-not-real-zzzz@{email.split('@')[1]}")
+            fake_code, _ = smtp.rcpt(f"noreply-zzz9z@{email.split('@')[1]}")
             smtp.quit()
 
             if code == 250 and fake_code == 250:
@@ -165,22 +175,29 @@ def verify_email_smtp(email, mx_host):
 
 
 def verify_emails(patterns, domain):
-    """Verify a list of email patterns against the domain's MX server."""
+    """Verify all email patterns in parallel against the domain's MX server."""
     mx_host = get_mx_host(domain)
-    results = []
 
-    for email in patterns:
-        if mx_host:
-            status = verify_email_smtp(email, mx_host)
-        else:
-            status = "no_mx"
+    if not mx_host:
+        return [{"email": p, "status": "no_mx"} for p in patterns]
 
-        results.append({
-            "email": email,
-            "status": status,
-        })
+    results = {}
+    with ThreadPoolExecutor(max_workers=len(patterns)) as executor:
+        future_to_email = {
+            executor.submit(verify_email_smtp, p, mx_host): p for p in patterns
+        }
+        for future in as_completed(future_to_email):
+            email = future_to_email[future]
+            results[email] = future.result()
 
-    return results
+    return [{"email": p, "status": results.get(p, "unknown")} for p in patterns]
+
+
+def _verify_domain(domain, first_name, last_name):
+    """Generate and verify all patterns for one domain."""
+    patterns = generate_email_patterns(first_name, last_name, domain)
+    emails = verify_emails(patterns, domain)
+    return {"domain": domain, "emails": emails}
 
 
 @app.route("/")
@@ -234,14 +251,15 @@ def search():
             "results": [],
         })
 
+    # Verify all found domains in parallel
     all_results = []
-    for domain in domains:
-        patterns = generate_email_patterns(first_name, last_name, domain)
-        verified = verify_emails(patterns, domain)
-        all_results.append({
-            "domain": domain,
-            "emails": verified,
-        })
+    with ThreadPoolExecutor(max_workers=len(domains)) as executor:
+        futures = [
+            executor.submit(_verify_domain, domain, first_name, last_name)
+            for domain in domains
+        ]
+        for future in as_completed(futures):
+            all_results.append(future.result())
 
     entry = {
         "date": date.today().isoformat(),
@@ -292,10 +310,8 @@ def search_manual():
     first_name = parts[0]
     last_name = parts[-1]
 
-    patterns = generate_email_patterns(first_name, last_name, domain)
-    verified = verify_emails(patterns, domain)
-
-    all_results = [{"domain": domain, "emails": verified}]
+    result = _verify_domain(domain, first_name, last_name)
+    all_results = [result]
 
     entry = {
         "date": date.today().isoformat(),
