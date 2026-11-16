@@ -2,6 +2,7 @@ import dns.resolver
 import json
 import os
 import re
+import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
@@ -294,6 +295,30 @@ def get_history():
 def clear_history():
     save_history([])
     return jsonify({"message": "History cleared."})
+
+
+@app.route("/api/test-smtp")
+def test_smtp():
+    """Check whether outbound port 25 is reachable from this host."""
+    targets = [
+        ("gmail-smtp-in.l.google.com", 25),
+        ("aspmx.l.google.com", 25),
+        ("alt1.aspmx.l.google.com", 25),
+    ]
+    results = []
+    for host, port in targets:
+        try:
+            with socket.create_connection((host, port), timeout=5):
+                results.append({"host": host, "port": port, "reachable": True})
+        except Exception as e:
+            results.append({"host": host, "port": port, "reachable": False, "error": str(e)})
+
+    any_ok = any(r["reachable"] for r in results)
+    return jsonify({
+        "port_25_reachable": any_ok,
+        "verdict": "SMTP verification should work" if any_ok else "Port 25 is blocked on this host — SMTP verification won't work",
+        "targets": results,
+    })
 
 
 if __name__ == "__main__":
