@@ -4,6 +4,7 @@ import os
 import re
 import socket
 import threading
+import requests as http
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
 from flask import Flask, request, jsonify
@@ -22,6 +23,7 @@ def add_cors_headers(response):
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
 DAILY_LIMIT = 10
+HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
 
 
 def load_history():
@@ -130,14 +132,49 @@ def generate_email_patterns(first_name, last_name, domain):
 
 
 
+_HUNTER_STATUS = {
+    "valid":      "valid",
+    "invalid":    "invalid",
+    "accept_all": "catch_all",
+    "unknown":    "unknown",
+}
+
+
+def _verify_email_hunter(email):
+    """Verify one email via Hunter.io. Returns a status string."""
+    try:
+        resp = http.get(
+            "https://api.hunter.io/v2/email-verifier",
+            params={"email": email, "api_key": HUNTER_API_KEY},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            status = resp.json().get("data", {}).get("status", "unknown")
+            return _HUNTER_STATUS.get(status, "unknown")
+        # 429 = quota exhausted, anything else = treat as unverified
+        return "unverified"
+    except Exception:
+        return "unverified"
+
+
 def verify_emails(patterns, domain):
     """
-    Return patterns with their verification status.
-    SMTP verification via port 25 is blocked on most cloud hosts (including
-    Render's free tier), so we skip it and mark all patterns as 'unverified'.
-    The domain is MX-confirmed, so the patterns are valid formats to try.
+    Verify patterns via Hunter.io when HUNTER_API_KEY is set;
+    otherwise return 'unverified' so the app stays usable without a key.
     """
-    return [{"email": p, "status": "unverified"} for p in patterns]
+    if not HUNTER_API_KEY:
+        return [{"email": p, "status": "unverified"} for p in patterns]
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=len(patterns)) as executor:
+        future_to_email = {
+            executor.submit(_verify_email_hunter, p): p for p in patterns
+        }
+        for future in as_completed(future_to_email):
+            email = future_to_email[future]
+            results[email] = future.result()
+
+    return [{"email": p, "status": results.get(p, "unverified")} for p in patterns]
 
 
 def _verify_domain(domain, first_name, last_name):
