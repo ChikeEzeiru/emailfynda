@@ -2,9 +2,9 @@ import dns.resolver
 import json
 import os
 import re
+import smtplib
 import socket
 import threading
-import requests as http
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
 from flask import Flask, request, jsonify
@@ -22,8 +22,6 @@ def add_cors_headers(response):
     return response
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
-DAILY_LIMIT = 10
-HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
 
 
 def load_history():
@@ -37,10 +35,6 @@ def save_history(history):
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
 
-
-def count_today(history):
-    today = date.today().isoformat()
-    return sum(1 for entry in history if entry.get("date") == today)
 
 
 _resolver = dns.resolver.Resolver()
@@ -132,55 +126,68 @@ def generate_email_patterns(first_name, last_name, domain):
 
 
 
-_HUNTER_STATUS = {
-    "valid":      "valid",
-    "invalid":    "invalid",
-    "accept_all": "catch_all",
-    "unknown":    "unknown",
-}
-
-
-def _verify_email_hunter(email):
-    """Verify one email via Hunter.io. Returns a status string."""
+def _get_mx_host(domain):
+    """Return the highest-priority MX hostname for a domain."""
     try:
-        resp = http.get(
-            "https://api.hunter.io/v2/email-verifier",
-            params={"email": email, "api_key": HUNTER_API_KEY},
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            status = resp.json().get("data", {}).get("status", "unknown")
-            return _HUNTER_STATUS.get(status, "unknown")
-        # 429 = quota exhausted, anything else = treat as unverified
-        return "unverified"
+        records = _resolver.resolve(domain, "MX")
+        best = sorted(records, key=lambda r: r.preference)[0]
+        return str(best.exchange).rstrip(".")
     except Exception:
-        return "unverified"
+        return None
 
 
-def verify_emails(patterns, domain):
+def _verify_domain_smtp(domain, emails):
     """
-    Verify patterns via Hunter.io when HUNTER_API_KEY is set;
-    otherwise return 'unverified' so the app stays usable without a key.
+    Verify a list of email addresses against a domain's mail server in one
+    SMTP session. Returns a dict mapping email -> status.
+
+    Statuses: 'valid', 'invalid', 'catch_all', 'unknown'
     """
-    if not HUNTER_API_KEY:
-        return [{"email": p, "status": "unverified"} for p in patterns]
+    mx_host = _get_mx_host(domain)
+    if not mx_host:
+        return {e: "unknown" for e in emails}
 
-    results = {}
-    with ThreadPoolExecutor(max_workers=len(patterns)) as executor:
-        future_to_email = {
-            executor.submit(_verify_email_hunter, p): p for p in patterns
-        }
-        for future in as_completed(future_to_email):
-            email = future_to_email[future]
-            results[email] = future.result()
+    try:
+        with smtplib.SMTP(timeout=10) as smtp:
+            smtp.connect(mx_host, 25)
+            smtp.ehlo("emailfynda.com")
+            smtp.mail("verify@emailfynda.com")
 
-    return [{"email": p, "status": results.get(p, "unverified")} for p in patterns]
+            # Catch-all detection: if a nonsense address is accepted, every
+            # address on this domain will return 250 — flag them all.
+            probe = f"zzz_no_exist_probe_xyz@{domain}"
+            code, _ = smtp.rcpt(probe)
+            if code == 250:
+                return {e: "catch_all" for e in emails}
+
+            # Real checks
+            smtp.rset()
+            smtp.mail("verify@emailfynda.com")
+            results = {}
+            for email in emails:
+                try:
+                    code, _ = smtp.rcpt(email)
+                    if code == 250:
+                        results[email] = "valid"
+                    elif code in (550, 551, 552, 553, 554):
+                        results[email] = "invalid"
+                    else:
+                        results[email] = "unknown"
+                except smtplib.SMTPServerDisconnected:
+                    # Some servers close after a few RCPTs; mark rest unknown
+                    for e in emails:
+                        results.setdefault(e, "unknown")
+                    break
+            return results
+    except Exception:
+        return {e: "unknown" for e in emails}
 
 
 def _verify_domain(domain, first_name, last_name):
-    """Generate and verify all patterns for one domain."""
+    """Generate and verify all patterns for one domain via SMTP."""
     patterns = generate_email_patterns(first_name, last_name, domain)
-    emails = verify_emails(patterns, domain)
+    statuses = _verify_domain_smtp(domain, patterns)
+    emails = [{"email": p, "status": statuses.get(p, "unknown")} for p in patterns]
     return {"domain": domain, "emails": emails}
 
 
@@ -192,11 +199,6 @@ def health():
 @app.route("/api/search", methods=["POST"])
 def search():
     history = load_history()
-    today_count = count_today(history)
-
-    if today_count >= DAILY_LIMIT:
-        return jsonify({"error": f"Daily limit reached ({DAILY_LIMIT}/day). Try again tomorrow."}), 429
-
     data = request.json
     full_name = data.get("name", "").strip()
     company = data.get("company", "").strip()
@@ -272,7 +274,6 @@ def search():
         "status": "completed",
         "domains_found": domains,
         "results": all_results,
-        "remaining_today": DAILY_LIMIT - today_count - 1,
     })
 
 
@@ -280,11 +281,6 @@ def search():
 def search_manual():
     """Search with a manually provided domain."""
     history = load_history()
-    today_count = count_today(history)
-
-    if today_count >= DAILY_LIMIT:
-        return jsonify({"error": f"Daily limit reached ({DAILY_LIMIT}/day). Try again tomorrow."}), 429
-
     data = request.json
     full_name = data.get("name", "").strip()
     company = data.get("company", "").strip()
@@ -325,7 +321,6 @@ def search_manual():
         "status": "completed",
         "domains_found": [domain],
         "results": all_results,
-        "remaining_today": DAILY_LIMIT - today_count - 1,
     })
 
 
