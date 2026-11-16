@@ -2,8 +2,7 @@ import dns.resolver
 import json
 import os
 import re
-import smtplib
-import socket
+import requests as http
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
@@ -12,6 +11,8 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+
+HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
 
 
 @app.after_request
@@ -126,61 +127,35 @@ def generate_email_patterns(first_name, last_name, domain):
 
 
 
-def _get_mx_host(domain):
-    """Return the highest-priority MX hostname for a domain."""
+def _verify_email_hunter(email):
+    """Return Hunter.io status for one email: valid, invalid, catch_all, or unknown."""
+    if not HUNTER_API_KEY:
+        return "unknown"
     try:
-        records = _resolver.resolve(domain, "MX")
-        best = sorted(records, key=lambda r: r.preference)[0]
-        return str(best.exchange).rstrip(".")
+        resp = http.get(
+            "https://api.hunter.io/v2/email-verifier",
+            params={"email": email, "api_key": HUNTER_API_KEY},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            status = resp.json().get("data", {}).get("status", "unknown")
+            if status == "valid":
+                return "valid"
+            elif status == "invalid":
+                return "invalid"
+            elif status == "accept_all":
+                return "catch_all"
+        return "unknown"
     except Exception:
-        return None
+        return "unknown"
 
 
 def _verify_domain_smtp(domain, emails):
-    """
-    Verify a list of email addresses against a domain's mail server in one
-    SMTP session. Returns a dict mapping email -> status.
-
-    Statuses: 'valid', 'invalid', 'catch_all', 'unknown'
-    """
-    mx_host = _get_mx_host(domain)
-    if not mx_host:
-        return {e: "unknown" for e in emails}
-
-    try:
-        with smtplib.SMTP(timeout=5) as smtp:
-            smtp.connect(mx_host, 25)
-            smtp.ehlo("emailfynda.com")
-            smtp.mail("verify@emailfynda.com")
-
-            # Catch-all detection: if a nonsense address is accepted, every
-            # address on this domain will return 250 — flag them all.
-            probe = f"zzz_no_exist_probe_xyz@{domain}"
-            code, _ = smtp.rcpt(probe)
-            if code == 250:
-                return {e: "catch_all" for e in emails}
-
-            # Real checks
-            smtp.rset()
-            smtp.mail("verify@emailfynda.com")
-            results = {}
-            for email in emails:
-                try:
-                    code, _ = smtp.rcpt(email)
-                    if code == 250:
-                        results[email] = "valid"
-                    elif code in (550, 551, 552, 553, 554):
-                        results[email] = "invalid"
-                    else:
-                        results[email] = "unknown"
-                except smtplib.SMTPServerDisconnected:
-                    # Some servers close after a few RCPTs; mark rest unknown
-                    for e in emails:
-                        results.setdefault(e, "unknown")
-                    break
-            return results
-    except Exception:
-        return {e: "unknown" for e in emails}
+    """Verify emails via Hunter.io. Returns dict mapping email -> status."""
+    results = {}
+    for email in emails:
+        results[email] = _verify_email_hunter(email)
+    return results
 
 
 def _verify_domain(domain, first_name, last_name):
@@ -335,29 +310,6 @@ def clear_history():
     save_history([])
     return jsonify({"message": "History cleared."})
 
-
-@app.route("/api/test-smtp")
-def test_smtp():
-    """Check whether outbound port 25 is reachable from this host."""
-    targets = [
-        ("gmail-smtp-in.l.google.com", 25),
-        ("aspmx.l.google.com", 25),
-        ("alt1.aspmx.l.google.com", 25),
-    ]
-    results = []
-    for host, port in targets:
-        try:
-            with socket.create_connection((host, port), timeout=5):
-                results.append({"host": host, "port": port, "reachable": True})
-        except Exception as e:
-            results.append({"host": host, "port": port, "reachable": False, "error": str(e)})
-
-    any_ok = any(r["reachable"] for r in results)
-    return jsonify({
-        "port_25_reachable": any_ok,
-        "verdict": "SMTP verification should work" if any_ok else "Port 25 is blocked on this host — SMTP verification won't work",
-        "targets": results,
-    })
 
 
 if __name__ == "__main__":
